@@ -1,6 +1,6 @@
 # CmdTab
 
-A small, native macOS window switcher in the spirit of [AltTab](https://alt-tab-macos.netlify.app): it replaces ⌘⇥ (or any shortcut you pick), can list every window instead of just apps, and comes with four animated styles.
+A small, native macOS window switcher in the spirit of [AltTab](https://alt-tab-macos.netlify.app): it replaces ⌘⇥ (or any shortcut you pick), can list every window instead of just apps, and comes with five animated styles.
 
 Requires macOS 26 or newer. Written in Swift with AppKit + SwiftUI, no dependencies.
 
@@ -9,11 +9,13 @@ Requires macOS 26 or newer. Written in Swift with AppKit + SwiftUI, no dependenc
 - **Any shortcut**, including ⌘⇥ itself. Hold the modifier and tap the key to cycle, add ⇧ to go back, release the modifier to switch. A quick tap jumps straight to the previous window without showing the UI.
 - **Second shortcut** (default ⌘`) for the windows of the current app only. Pressing it while ⌘⇥ is open switches scope on the fly.
 - **Windows or apps.** "Show every window" gives each Chrome window (or any other app's window) its own entry. App mode groups like the system switcher and also lists apps without windows.
-- **Four styles**, all spring-animated: Classic (row of icons like macOS), Grid (previews in a grid, AltTab style), Cover Flow (3D carousel like the screenshot that started this), Filmstrip (one line of previews).
+- **Five styles**, all spring-animated: Classic (row of icons like macOS), Grid (previews in a grid, AltTab style), Cover Flow (3D carousel), Ring (windows on a spinning 3D ring), Filmstrip (one line of previews). The selected preview is marked with a soft glow.
 - **Live previews** of every window via ScreenCaptureKit, including minimized windows and windows on other Spaces.
-- **Mouse** hover selects, click switches, click outside cancels.
+- **Mouse:** in Classic and Grid hovering selects; in the moving styles a click selects. The switcher stays open while the modifier is held; clicking the highlighted window or releasing the modifier switches. Click outside cancels.
 - **Keys while open:** ←/→/↑/↓ move, ↩ switch, ⎋ cancel, W close window, M minimize, Q quit app.
-- Menu bar item with quick style switching, launch at login, a Preview button in Settings.
+- **Multiple displays:** choose where the switcher appears (display under the mouse by default, the active window's display, or the primary one) and whether it lists windows from all displays or only its own.
+- Menu bar item with quick style switching (can be hidden; open the app again to reach Settings), launch at login, a Preview button in Settings.
+- A permissions window gates startup: nothing runs until Accessibility and Screen Recording are granted.
 
 ## Build
 
