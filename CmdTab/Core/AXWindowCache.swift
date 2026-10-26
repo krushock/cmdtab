@@ -1,9 +1,6 @@
 import AppKit
 import ApplicationServices
 
-@_silgen_name("_AXUIElementGetWindow")
-func _AXUIElementGetWindow(_ element: AXUIElement, _ identifier: UnsafeMutablePointer<CGWindowID>) -> AXError
-
 /// Accessibility window elements per application, queried off the main thread with short timeouts
 /// so an unresponsive app can never stall the switcher.
 final class AXWindowCache: @unchecked Sendable {
@@ -56,8 +53,7 @@ final class AXWindowCache: @unchecked Sendable {
         }
         var out: [CGWindowID: Entry] = [:]
         for w in windows {
-            var id: CGWindowID = 0
-            guard _AXUIElementGetWindow(w, &id) == .success, id != 0 else { continue }
+            guard let id = windowID(of: w) else { continue }
             var minimized: CFTypeRef?
             let isMin = AXUIElementCopyAttributeValue(w, kAXMinimizedAttribute as CFString, &minimized) == .success
                 && ((minimized as? Bool) ?? false)
@@ -72,9 +68,14 @@ final class AXWindowCache: @unchecked Sendable {
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(app, kAXFocusedWindowAttribute as CFString, &value) == .success,
               let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
-        let element = value as! AXUIElement
+        return windowID(of: value as! AXUIElement)
+    }
+
+    /// Window number of an Accessibility window element, or nil when unavailable.
+    static func windowID(of element: AXUIElement) -> CGWindowID? {
+        guard let fn = PrivateAPI.axGetWindow else { return nil }
         var id: CGWindowID = 0
-        guard _AXUIElementGetWindow(element, &id) == .success, id != 0 else { return nil }
+        guard fn(element, &id) == .success, id != 0 else { return nil }
         return id
     }
 }

@@ -42,7 +42,7 @@ struct GridStyleView: View {
             }
             .padding(24)
             .background {
-                VisualEffectView(material: .hudWindow)
+                MaterialBackground(material: .hudWindow)
                     .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
             }
             .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous).strokeBorder(Color.white.opacity(0.12)))

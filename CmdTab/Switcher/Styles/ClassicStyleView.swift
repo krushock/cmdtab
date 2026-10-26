@@ -32,7 +32,7 @@ struct ClassicStyleView: View {
             }
             .padding(16)
             .background {
-                VisualEffectView(material: .hudWindow)
+                MaterialBackground(material: .hudWindow)
                     .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
             }
             .overlay(RoundedRectangle(cornerRadius: 30, style: .continuous).strokeBorder(Color.primary.opacity(0.1)))

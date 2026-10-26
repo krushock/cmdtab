@@ -8,7 +8,7 @@ struct SwitcherRootView: View {
         GeometryReader { geo in
             ZStack {
                 if model.style.usesFullScreenBackdrop && model.dimBackground {
-                    VisualEffectView(material: .fullScreenUI, blendingMode: .behindWindow)
+                    MaterialBackground(material: .fullScreenUI)
                         .overlay(Color.black.opacity(0.38))
                         .allowsHitTesting(false)
                 }
@@ -41,8 +41,8 @@ private struct SwitcherContent: View {
             }
         }
         .frame(width: size.width, height: size.height)
-        .scaleEffect(appeared ? 1 : 0.94)
-        .opacity(appeared ? 1 : 0)
+        .scaleEffect(appeared || ScreenshotMode.enabled ? 1 : 0.94)
+        .opacity(appeared || ScreenshotMode.enabled ? 1 : 0)
         .onAppear {
             withAnimation(.spring(duration: 0.3, bounce: 0.22)) { appeared = true }
         }
@@ -50,6 +50,24 @@ private struct SwitcherContent: View {
 }
 
 // MARK: - Shared pieces
+
+/// Set when rendering README screenshots: materials become flat fills (NSVisualEffectView cannot render
+/// offscreen) and entry animations are skipped.
+enum ScreenshotMode {
+    nonisolated(unsafe) static var enabled = false
+}
+
+/// Frosted material in the live app, a flat translucent fill when rendering screenshots.
+struct MaterialBackground: View {
+    var material: NSVisualEffectView.Material
+    var body: some View {
+        if ScreenshotMode.enabled {
+            Color.black.opacity(material == .fullScreenUI ? 0.12 : 0.45)
+        } else {
+            VisualEffectView(material: material)
+        }
+    }
+}
 
 struct VisualEffectView: NSViewRepresentable {
     var material: NSVisualEffectView.Material
@@ -175,7 +193,7 @@ struct TitleLabel: View {
         .padding(.vertical, onBackdrop ? 0 : 8)
         .background {
             if !onBackdrop {
-                VisualEffectView(material: .hudWindow).clipShape(Capsule())
+                MaterialBackground(material: .hudWindow).clipShape(Capsule())
             }
         }
         .frame(maxWidth: 700)

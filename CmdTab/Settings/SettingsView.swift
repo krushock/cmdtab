@@ -120,7 +120,9 @@ private struct PermissionRow: View {
                 Text(detail).font(.callout).foregroundStyle(.secondary)
             }
             Spacer()
-            if !granted {
+            if granted {
+                Text("Granted").font(.callout).foregroundStyle(.secondary)
+            } else {
                 Button("Grant…", action: action)
             }
         }

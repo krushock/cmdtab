@@ -1,19 +1,6 @@
 import AppKit
 import ApplicationServices
 
-// Private SkyLight calls, the same ones AltTab relies on. Since macOS 14 the public
-// `NSRunningApplication.activate` is cooperative and is refused for a background app, so
-// these are what actually bring another app's window to the front.
-@_silgen_name("_SLPSSetFrontProcessWithOptions")
-func _SLPSSetFrontProcessWithOptions(_ psn: UnsafeMutablePointer<ProcessSerialNumber>, _ wid: CGWindowID, _ mode: UInt32) -> CGError
-
-@_silgen_name("SLPSPostEventRecordTo")
-func SLPSPostEventRecordTo(_ psn: UnsafeMutablePointer<ProcessSerialNumber>, _ bytes: UnsafeMutablePointer<UInt8>) -> CGError
-
-// Deprecated Carbon call that Swift hides; the symbol is still exported by HIServices.
-@_silgen_name("GetProcessForPID")
-func _GetProcessForPID(_ pid: pid_t, _ psn: UnsafeMutablePointer<ProcessSerialNumber>) -> OSStatus
-
 private let kSLPSUserGenerated: UInt32 = 0x200
 
 enum WindowActivator {
@@ -36,16 +23,21 @@ enum WindowActivator {
         } else {
             focus(pid: item.pid, windowID: 0)
         }
-        // Public call as a complement; it is a no-op when the private path already worked.
+        // Public call as a complement; a no-op when the private path already worked, the only path otherwise.
+        if !PrivateAPI.canFocusWindows {
+            app.activate(options: [.activateAllWindows])
+        }
         app.activate()
     }
 
-    /// Makes `pid` the front process and `windowID` its key window.
+    /// Makes `pid` the front process and `windowID` its key window. Uses the private SkyLight calls when
+    /// available; otherwise the caller's public `activate()` plus the Accessibility raise is all we have.
     private static func focus(pid: pid_t, windowID: CGWindowID) {
+        guard let getPSN = PrivateAPI.getProcessForPID, let setFront = PrivateAPI.setFrontProcess else { return }
         var psn = ProcessSerialNumber()
-        guard _GetProcessForPID(pid, &psn) == noErr else { return }
-        _ = _SLPSSetFrontProcessWithOptions(&psn, windowID, kSLPSUserGenerated)
-        guard windowID != 0 else { return }
+        guard getPSN(pid, &psn) == noErr else { return }
+        _ = setFront(&psn, windowID, kSLPSUserGenerated)
+        guard windowID != 0, let postEvent = PrivateAPI.postEventRecord else { return }
         // Post synthetic "window became key" records so the app focuses that specific window.
         for eventType: UInt8 in [0x01, 0x02] {
             var bytes = [UInt8](repeating: 0, count: 0xf8)
@@ -58,7 +50,7 @@ enum WindowActivator {
             }
             for i in 0x20..<0x30 { bytes[i] = 0xff }
             bytes.withUnsafeMutableBufferPointer { buf in
-                _ = SLPSPostEventRecordTo(&psn, buf.baseAddress!)
+                _ = postEvent(&psn, buf.baseAddress!)
             }
         }
     }

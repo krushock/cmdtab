@@ -42,6 +42,27 @@ final class RecorderView: NSView {
 
     override var acceptsFirstResponder: Bool { true }
     override var intrinsicContentSize: NSSize { NSSize(width: 150, height: 26) }
+    override var focusRingMaskBounds: NSRect { bounds }
+    override func drawFocusRingMask() {
+        NSBezierPath(roundedRect: bounds, xRadius: 6, yRadius: 6).fill()
+    }
+
+    // MARK: Accessibility (VoiceOver)
+
+    override func isAccessibilityElement() -> Bool { true }
+    override func accessibilityRole() -> NSAccessibility.Role? { .button }
+    override func accessibilityLabel() -> String? { "Keyboard shortcut" }
+    override func accessibilityValue() -> Any? {
+        if isRecording { return "Recording, press the new shortcut" }
+        return shortcut?.displayString ?? "Not set"
+    }
+    override func accessibilityHelp() -> String? {
+        "Press Space or Return to record a new shortcut" + (allowClear ? ", Delete to clear it" : "")
+    }
+    override func accessibilityPerformPress() -> Bool {
+        if isRecording { stopRecording() } else { startRecording() }
+        return true
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         let rect = bounds.insetBy(dx: 0.5, dy: 0.5)
@@ -119,10 +140,28 @@ final class RecorderView: NSView {
         return super.resignFirstResponder()
     }
 
+    override func becomeFirstResponder() -> Bool {
+        needsDisplay = true
+        return super.becomeFirstResponder()
+    }
+
     override func keyDown(with event: NSEvent) {
-        guard isRecording else { super.keyDown(with: event); return }
-        // Reached only when the event tap isn't running (no Accessibility permission yet).
-        record(keyCode: event.keyCode, flags: Shortcut.cgFlags(from: event.modifierFlags))
+        if isRecording {
+            // Reached only when the event tap isn't running (no Accessibility permission yet).
+            record(keyCode: event.keyCode, flags: Shortcut.cgFlags(from: event.modifierFlags))
+            return
+        }
+        // Keyboard operation while focused: Space/Return start recording, Delete clears.
+        let plain = event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty
+        switch Int(event.keyCode) {
+        case kVK_Space, kVK_Return, kVK_ANSI_KeypadEnter:
+            startRecording()
+        case kVK_Delete, kVK_ForwardDelete where allowClear && plain:
+            shortcut = nil
+            onChange?(nil)
+        default:
+            super.keyDown(with: event)
+        }
     }
 
     private func record(keyCode: UInt16, flags: CGEventFlags) {
