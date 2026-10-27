@@ -1,6 +1,6 @@
 # CmdTab
 
-A small, native macOS window switcher. It replaces ⌘⇥ (or any shortcut you pick), can list every window instead of just apps, comes with five animated styles, and replaces Mission Control with an Exposé you can arrange windows in by dragging.
+A small, native macOS window switcher. It replaces ⌘⇥ (or any shortcut you pick), can list every window instead of just apps, comes with five animated styles, and replaces Mission Control with an Exposé you can arrange windows in by dragging. Virtual desktops are deliberately left to macOS: there is no supported way for an app to move another app's window between Spaces.
 
 Requires macOS 26 or newer. Written in Swift with AppKit + SwiftUI, no dependencies.
 
@@ -16,7 +16,7 @@ Rendered from synthetic windows with `CmdTab --screenshots <dir>`, so they show 
 | --- | --- |
 | ![Cover Flow](docs/screenshots/coverFlow.jpg) | ![Ring](docs/screenshots/ring.jpg) |
 
-| Filmstrip | Exposé (Spaces bar, a remembered pair, dragging a window onto another) |
+| Filmstrip | Exposé (a remembered pair, dragging a window onto another) |
 | --- | --- |
 | ![Filmstrip](docs/screenshots/filmstrip.jpg) | ![Exposé](docs/screenshots/expose.jpg) |
 
@@ -29,9 +29,8 @@ Rendered from synthetic windows with `CmdTab --screenshots <dir>`, so they show 
 - **Live previews** of every window via ScreenCaptureKit, including minimized windows and windows on other Spaces.
 - **Mouse:** in Classic and Grid hovering selects; in the moving styles a click selects. The switcher stays open while the modifier is held; clicking the highlighted window or releasing the modifier switches. Click outside cancels.
 - **Keys while open:** ←/→/↑/↓ move, ↩ switch, ⎋ cancel, W close window, M minimize, Q quit app.
-- **Exposé on the Mission Control key (F3).** Every window of every display spread out, one overlay per display. Drag a window onto another to split the screen between them (the half it lands in lights up), drag to the left or right edge for that half, to the top edge to fill the screen, or onto another display to move it there. A drop closes the overview and brings the arranged windows forward, the dragged one focused. Click a window to switch to it, arrows and ↩ work too, ⎋ closes. Arranging uses Accessibility, so it works on any app's windows.
+- **Exposé on the Mission Control key (F3).** The windows of the current desktop on the display under the mouse, spread out without overlapping. Drag a window onto another to split the screen between them (the half it lands in lights up), drag to the left or right edge for that half, or to the top or bottom edge to fill the screen. A drop closes the overview and brings the arranged windows forward, the dragged one focused. Click a window to switch to it, arrows and ↩ work too, ⎋ closes. Arranging uses Accessibility, so it works on any app's windows.
 - **Groups.** A pair you split is remembered until either window moves, resizes, closes or minimizes. In the Exposé it shows as one tile with both windows at their real positions, and clicking it brings the pair back together.
-- **Spaces.** A bar at the top of each display shows its desktops and full-screen apps as live miniatures, current one highlighted. Click one to switch; drag a window onto a desktop to move it there. Moving opens the real Mission Control for a moment and drags the window's thumbnail onto the desktop, the same gesture you would make by hand, because macOS offers no other way for one app to carry another app's window to a different Space. You stay on your current desktop, as in Mission Control.
 - **Multiple displays:** choose where the switcher appears (display under the mouse by default, the active window's display, or the primary one) and whether it lists windows from all displays or only its own.
 - Menu bar item with quick style switching (can be hidden; open the app again to reach Settings), launch at login, a Preview button in Settings.
 - A permissions window gates startup: nothing runs until Accessibility and Screen Recording are granted.
@@ -65,7 +64,7 @@ CmdTab runs entirely on your Mac. It makes no network connections, has no analyt
 
 ## Private APIs
 
-Spaces are read with `CGSMainConnectionID`, `CGSCopyManagedDisplaySpaces` and `CGSCopySpacesForWindows`, and switched with `CGSManagedDisplaySetCurrentSpace`. macOS ignores the private calls that would move another app's window between Spaces, and it also ignores synthetic presses of the Mission Control keyboard shortcuts, which is why moving goes through Mission Control's own interface (found via the WindowManager process's Accessibility tree, `Core/MissionControl.swift`). Three further private calls are used: `_AXUIElementGetWindow` to match Accessibility windows to window numbers, and the SkyLight calls `_SLPSSetFrontProcessWithOptions` and `SLPSPostEventRecordTo` to focus a specific window of another app, since the public activation API is cooperative since macOS 14 and refuses background apps. They are looked up at runtime in `Core/PrivateAPI.swift`; if a macOS release removes one, switching falls back to the public path (less precise about which window gets focus) instead of the app failing to launch. Together with the lack of sandboxing they rule out the Mac App Store; direct distribution with notarization is unaffected.
+Three private system calls are used: `_AXUIElementGetWindow` to match Accessibility windows to window numbers, and the SkyLight calls `_SLPSSetFrontProcessWithOptions` and `SLPSPostEventRecordTo` to focus a specific window of another app, since the public activation API is cooperative since macOS 14 and refuses background apps. They are looked up at runtime in `Core/PrivateAPI.swift`; if a macOS release removes one, switching falls back to the public path (less precise about which window gets focus) instead of the app failing to launch. Together with the lack of sandboxing they rule out the Mac App Store; direct distribution with notarization is unaffected.
 
 ## How it works
 
@@ -74,4 +73,4 @@ Spaces are read with `CGSMainConnectionID`, `CGSCopyManagedDisplaySpaces` and `C
 - `Core/ThumbnailStore.swift` captures previews with `SCScreenshotManager`, a few at a time.
 - `Core/WindowActivator.swift` focuses the chosen window with the SkyLight calls above when available, then raises it via Accessibility.
 - `Switcher/Styles/*` are plain SwiftUI views hosted in a borderless non-activating `NSPanel`.
-- `Expose/*` is the Mission Control replacement: `ExposeLayout.swift` packs windows into rows at one scale, `ExposeController.swift` owns the per-display panels and turns drops into window frames, `Core/WindowArranger.swift` applies them through Accessibility, `Core/WindowGroups.swift` remembers split pairs and `Core/SpaceManager.swift` reads and switches Spaces, and `Core/MissionControl.swift` moves windows between them.
+- `Expose/*` is the Mission Control replacement: `ExposeLayout.swift` packs windows into rows at one scale, `ExposeController.swift` owns the per-display panels and turns drops into window frames, `Core/WindowArranger.swift` applies them through Accessibility and `Core/WindowGroups.swift` remembers split pairs.

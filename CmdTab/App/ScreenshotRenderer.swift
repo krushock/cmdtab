@@ -66,7 +66,7 @@ enum ScreenshotRenderer {
         // Exposé with a drag in progress over another window.
         let exposeModel = ExposeModel()
         exposeModel.thumbnails = thumbs
-        // Windows placed on the (synthetic) desktop, so the Space previews have something to show.
+        // Windows placed on the synthetic desktop.
         let positions: [CGRect] = [
             CGRect(x: 40, y: 60, width: 760, height: 520), CGRect(x: 560, y: 120, width: 620, height: 500),
             CGRect(x: 120, y: 300, width: 700, height: 480), CGRect(x: 760, y: 360, width: 600, height: 440),
@@ -86,7 +86,7 @@ enum ScreenshotRenderer {
         ]
         var entries: [[WindowInfo]] = [pair]
         entries += shown.dropFirst(2).map { [$0] }
-        let top = SpacesBarLayout.totalHeight + 36
+        let top: CGFloat = 80
         let area = CGRect(x: 70, y: top, width: size.width - 140, height: size.height - top - 90)
         let unions = entries.map { ms in ms.dropFirst().reduce(ms[0].frame) { $0.union($1.frame) } }
         let frames = ExposeLayout.layout(zip(entries, unions).map { ExposeLayout.Entry(id: $0[0].id, size: $1.size) }, in: area)
@@ -96,16 +96,7 @@ enum ScreenshotRenderer {
                        groupID: members.count > 1 ? UUID() : nil, frame: frames[members[0].id] ?? .zero)
         }
         let screenFrame = CGRect(origin: .zero, size: size)
-        let spaces = [
-            SpaceTile(id: 1, index: 0, name: "Desktop 1", isCurrent: true, isFullscreen: false, windows: pair + Array(shown[2...])),
-            SpaceTile(id: 2, index: 1, name: "Desktop 2", isCurrent: false, isFullscreen: false, windows: [shown[4], shown[2]]),
-            SpaceTile(id: 3, index: 2, name: "Desktop 3", isCurrent: false, isFullscreen: false, windows: []),
-            SpaceTile(id: 4, index: 3, name: "Music", isCurrent: false, isFullscreen: true,
-                      windows: [WindowInfo(id: windows[6].id, pid: windows[6].pid, title: "Music", frame: screenFrame,
-                                           isOnScreen: false, isMinimized: false, appName: "Music", bundleID: windows[6].bundleID)]),
-        ]
-        exposeModel.screens = [ExposeScreen(id: 0, name: "Built-in Display", frame: screenFrame, topLeftOrigin: .zero,
-                                            tiles: tiles, spaces: spaces)]
+        exposeModel.screens = [ExposeScreen(id: 0, name: "Built-in Display", frame: screenFrame, topLeftOrigin: .zero, tiles: tiles)]
         if let dragged = tiles.last, let target = tiles.dropFirst().first {
             let grab = CGSize(width: dragged.frame.width * 0.5, height: dragged.frame.height * 0.4)
             let panelPoint = CGPoint(x: target.frame.midX + target.frame.width * 0.3, y: target.frame.midY)
@@ -113,7 +104,7 @@ enum ScreenshotRenderer {
                                           location: exposeModel.screens[0].globalPoint(fromPanel: panelPoint),
                                           target: .window(target.id, .right))
         }
-        let exposeActions = ExposeActions(hover: { _ in }, activate: { _ in }, switchSpace: { _, _ in }, dragChanged: { _, _, _, _ in }, dragEnded: {}, cancel: {})
+        let exposeActions = ExposeActions(hover: { _ in }, activate: { _ in }, dragChanged: { _, _, _, _ in }, dragEnded: {}, cancel: {})
         let exposeView = ZStack {
             Wallpaper()
             ExposeScreenView(model: exposeModel, screenIndex: 0, actions: exposeActions)

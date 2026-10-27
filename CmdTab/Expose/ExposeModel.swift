@@ -10,10 +10,6 @@ enum DropTarget: Equatable {
     case window(CGWindowID, SplitSide)
     /// Tile the dragged window into a zone of the screen with this index.
     case zone(Int, DropZone)
-    /// Move the dragged window to the screen with this index, keeping its size.
-    case display(Int)
-    /// Move the dragged window to this Space of the display with this index.
-    case space(Int, UInt64)
 }
 
 /// One cell of the overview: a single window, or a group of windows CmdTab tiled together.
@@ -48,16 +44,6 @@ struct ExposeTile: Identifiable, Equatable {
     }
 }
 
-/// A Space (desktop or full-screen app) shown in the bar at the top of a display's overlay.
-struct SpaceTile: Identifiable, Equatable {
-    let id: UInt64
-    let index: Int
-    let name: String
-    let isCurrent: Bool
-    let isFullscreen: Bool
-    let windows: [WindowInfo]
-}
-
 struct ExposeScreen: Identifiable, Equatable {
     let id: Int
     let name: String
@@ -66,7 +52,6 @@ struct ExposeScreen: Identifiable, Equatable {
     /// The same screen's origin in window (top-left global) coordinates.
     let topLeftOrigin: CGPoint
     var tiles: [ExposeTile]
-    var spaces: [SpaceTile]
 
     var size: CGSize { frame.size }
 
@@ -85,29 +70,6 @@ struct ExposeScreen: Identifiable, Equatable {
     /// Window frame (top-left global) → rectangle in this panel's points.
     func panelRect(fromWindowFrame f: CGRect) -> CGRect {
         CGRect(x: f.minX - topLeftOrigin.x, y: f.minY - topLeftOrigin.y, width: f.width, height: f.height)
-    }
-}
-
-/// Geometry of the Spaces bar, shared by the view (drawing) and the controller (hit testing).
-enum SpacesBarLayout {
-    static let top: CGFloat = 54
-    static let cardHeight: CGFloat = 84
-    static let spacing: CGFloat = 18
-    static let labelHeight: CGFloat = 22
-
-    static var totalHeight: CGFloat { top + cardHeight + labelHeight }
-
-    static func cardFrames(for spaces: [SpaceTile], screenSize: CGSize) -> [UInt64: CGRect] {
-        guard !spaces.isEmpty, screenSize.height > 0 else { return [:] }
-        let width = cardHeight * (screenSize.width / screenSize.height)
-        let total = CGFloat(spaces.count) * width + CGFloat(spaces.count - 1) * spacing
-        var x = (screenSize.width - total) / 2
-        var frames: [UInt64: CGRect] = [:]
-        for space in spaces {
-            frames[space.id] = CGRect(x: x, y: top, width: width, height: cardHeight)
-            x += width + spacing
-        }
-        return frames
     }
 }
 
@@ -149,7 +111,6 @@ final class ExposeModel {
 struct ExposeActions {
     var hover: (CGWindowID?) -> Void
     var activate: (CGWindowID) -> Void
-    var switchSpace: (_ screen: Int, _ space: UInt64) -> Void
     var dragChanged: (_ id: CGWindowID, _ screen: Int, _ global: CGPoint, _ grabOffset: CGSize) -> Void
     var dragEnded: () -> Void
     var cancel: () -> Void
