@@ -29,6 +29,8 @@ struct Shortcut: Codable, Equatable, Hashable {
 
     static let cmdTab = Shortcut(keyCode: UInt16(kVK_Tab), flags: .maskCommand)
     static let cmdGrave = Shortcut(keyCode: UInt16(kVK_ANSI_Grave), flags: .maskCommand)
+    /// The Mission Control key (F3 on Apple keyboards) arrives as key code 160.
+    static let missionControl = Shortcut(keyCode: 160, flags: [])
 
     func matches(keyCode: UInt16, flags: CGEventFlags) -> Bool {
         keyCode == self.keyCode && flags.intersection(Self.relevantMask) == self.flags
@@ -70,6 +72,7 @@ enum KeyNames {
         kVK_F13: "F13", kVK_F14: "F14", kVK_F15: "F15", kVK_F16: "F16", kVK_F17: "F17",
         kVK_F18: "F18", kVK_F19: "F19", kVK_F20: "F20",
         kVK_ANSI_KeypadEnter: "⌤", kVK_ANSI_KeypadClear: "⌧",
+        160: "Mission Control (F3)", 131: "Launchpad (F4)",
     ]
 
     static func name(for keyCode: UInt16) -> String {

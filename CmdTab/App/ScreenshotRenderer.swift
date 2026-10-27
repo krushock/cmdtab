@@ -63,7 +63,35 @@ enum ScreenshotRenderer {
             .frame(width: size.width, height: size.height)
             write(view, to: dir.appendingPathComponent("\(style.rawValue).jpg"))
         }
-        print("wrote \(SwitcherStyle.allCases.count) screenshots to \(dir.path)")
+        // Exposé with a drag in progress over another window.
+        let exposeModel = ExposeModel()
+        exposeModel.thumbnails = thumbs
+        let shown = Array(windows.prefix(6)).map { w in
+            WindowInfo(id: w.id, pid: w.pid, title: w.title,
+                       frame: CGRect(x: 0, y: 0, width: w.frame.width * 0.9, height: w.frame.height * 0.9),
+                       isOnScreen: true, isMinimized: false, appName: w.appName, bundleID: w.bundleID)
+        }
+        let area = CGRect(x: 70, y: 80, width: size.width - 140, height: size.height - 170)
+        let frames = ExposeLayout.layout(shown, in: area)
+        let tiles = zip(shown, items).map { w, item in ExposeTile(id: w.id, window: w, item: item, frame: frames[w.id] ?? .zero) }
+        let screenFrame = CGRect(origin: .zero, size: size)
+        exposeModel.screens = [ExposeScreen(id: 0, name: "Built-in Display", frame: screenFrame, tiles: tiles)]
+        if let dragged = tiles.last, let target = tiles.first {
+            let grab = CGSize(width: dragged.frame.width * 0.5, height: dragged.frame.height * 0.4)
+            let panelPoint = CGPoint(x: target.frame.midX + target.frame.width * 0.3, y: target.frame.midY)
+            exposeModel.drag = ExposeDrag(windowID: dragged.id, sourceScreen: 0, grabOffset: grab, tileSize: dragged.frame.size,
+                                          location: exposeModel.screens[0].globalPoint(fromPanel: panelPoint),
+                                          target: .window(target.id, .right))
+        }
+        let exposeActions = ExposeActions(hover: { _ in }, activate: { _ in }, dragChanged: { _, _, _, _ in }, dragEnded: {}, cancel: {})
+        let exposeView = ZStack {
+            Wallpaper()
+            ExposeScreenView(model: exposeModel, screenIndex: 0, actions: exposeActions)
+        }
+        .frame(width: size.width, height: size.height)
+        write(exposeView, to: dir.appendingPathComponent("expose.jpg"))
+
+        print("wrote \(SwitcherStyle.allCases.count + 1) screenshots to \(dir.path)")
     }
 
     private static func write<V: View>(_ view: V, to url: URL) {

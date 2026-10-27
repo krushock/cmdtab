@@ -143,9 +143,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func showSettings() {
         if settingsWindow == nil {
-            settingsWindow = SettingsWindowController(settings: AppSettings.shared) { [weak self] in
-                self?.controller?.preview()
-            }
+            settingsWindow = SettingsWindowController(
+                settings: AppSettings.shared,
+                onPreview: { [weak self] in self?.controller?.preview() },
+                onPreviewExpose: { [weak self] in self?.controller?.previewExpose() })
         }
         settingsWindow?.show()
     }

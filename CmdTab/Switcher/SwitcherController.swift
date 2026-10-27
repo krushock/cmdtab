@@ -20,6 +20,12 @@ final class SwitcherController {
             cancel: { [weak self] in self?.cancel() }))
     }()
 
+    private lazy var expose: ExposeController = {
+        ExposeController(settings: settings, source: source, thumbnails: thumbnails) { [weak self] window in
+            self?.activateFromExpose(window)
+        }
+    }()
+
     private(set) var isOpen = false
     private var activeShortcut: Shortcut?
     private var showTask: Task<Void, Never>?
@@ -51,6 +57,22 @@ final class SwitcherController {
     func stop() {
         tap?.stop()
         if isOpen { cancel() }
+        expose.close()
+    }
+
+    /// Opens Exposé without the shortcut (used by Settings).
+    func previewExpose() {
+        if isOpen { cancel() }
+        expose.open()
+    }
+
+    private func activateFromExpose(_ window: WindowInfo) {
+        let item = SwitcherItem.window(window, app: NSRunningApplication(processIdentifier: window.pid))
+        mru.bump(window.id)
+        let axCache = source.axCache
+        DispatchQueue.main.async {
+            WindowActivator.activate(item, axCache: axCache)
+        }
     }
 
     // MARK: - Event handling
@@ -76,6 +98,28 @@ final class SwitcherController {
                 handleKeyWhileOpen(keyCode: keyCode, flags: flags)
                 return true
             }
+            if expose.isOpen {
+                swallowedKeys.insert(keyCode)
+                if let s = settings.exposeShortcut, s.matches(keyCode: keyCode, flags: flags) {
+                    expose.close()
+                    return true
+                }
+                // The switcher shortcut leaves Exposé and opens the switcher.
+                for (shortcut, scope) in configuredShortcuts {
+                    if shortcut.matches(keyCode: keyCode, flags: flags) {
+                        expose.close()
+                        open(scope: scope, shortcut: shortcut, backward: false)
+                        return true
+                    }
+                }
+                expose.handleKey(keyCode: keyCode, flags: flags)
+                return true
+            }
+            if let s = settings.exposeShortcut, s.matches(keyCode: keyCode, flags: flags) {
+                swallowedKeys.insert(keyCode)
+                expose.open()
+                return true
+            }
             for (shortcut, scope) in configuredShortcuts {
                 if shortcut.matches(keyCode: keyCode, flags: flags) {
                     swallowedKeys.insert(keyCode)
@@ -93,7 +137,7 @@ final class SwitcherController {
         case .keyUp:
             let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
             if swallowedKeys.remove(keyCode) != nil { return true }
-            return isOpen
+            return isOpen || expose.isOpen
 
         case .flagsChanged:
             if isOpen, let shortcut = activeShortcut, shortcut.isHoldStyle {

@@ -3,6 +3,7 @@ import SwiftUI
 struct SettingsView: View {
     @Bindable var settings: AppSettings
     var onPreview: () -> Void = {}
+    var onPreviewExpose: () -> Void = {}
     @State private var hasAccessibility = Permissions.hasAccessibility
     @State private var hasScreenRecording = Permissions.hasScreenRecording
     @State private var launchAtLogin = false
@@ -48,6 +49,16 @@ struct SettingsView: View {
                 Toggle("Include minimized windows", isOn: $settings.includeMinimized)
                 Toggle("Include windows from other Spaces", isOn: $settings.includeOtherSpaces)
                 Toggle("Include apps without windows (app mode)", isOn: $settings.appsWithoutWindows)
+            }
+
+            Section("Exposé") {
+                LabeledContent("Show all windows") {
+                    ShortcutRecorder(shortcut: $settings.exposeShortcut)
+                }
+                Text("Replaces Mission Control on the F3 key: every window of every display spread out. Drag a window onto another to split the screen between them, drag to the left or right edge for a half, to the top edge to fill the screen, or onto another display to move it there. Click a window to switch to it.")
+                    .font(.callout).foregroundStyle(.secondary)
+                Toggle("Include minimized windows", isOn: $settings.exposeIncludeMinimized)
+                Button("Preview Exposé") { onPreviewExpose() }
             }
 
             Section("Displays") {

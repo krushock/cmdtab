@@ -73,13 +73,39 @@ struct SettingsData: Codable, Equatable {
     var hideMenuBarIcon: Bool = false
     var displayRule: SwitcherDisplayRule = .mouse
     var windowDisplayFilter: WindowDisplayFilter = .allDisplays
+    var exposeShortcut: Shortcut? = .missionControl
+    var exposeIncludeMinimized: Bool = false
 
     init() {}
+
+    enum CodingKeys: String, CodingKey {
+        case mainShortcut, appWindowsShortcut, style, showAllWindows, includeMinimized, includeOtherSpaces,
+             showDelay, dimBackground, appsWithoutWindows, hideMenuBarIcon, displayRule, windowDisplayFilter,
+             exposeShortcut, exposeIncludeMinimized
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(mainShortcut, forKey: .mainShortcut)
+        try c.encode(appWindowsShortcut, forKey: .appWindowsShortcut)   // nil is written as null
+        try c.encode(style, forKey: .style)
+        try c.encode(showAllWindows, forKey: .showAllWindows)
+        try c.encode(includeMinimized, forKey: .includeMinimized)
+        try c.encode(includeOtherSpaces, forKey: .includeOtherSpaces)
+        try c.encode(showDelay, forKey: .showDelay)
+        try c.encode(dimBackground, forKey: .dimBackground)
+        try c.encode(appsWithoutWindows, forKey: .appsWithoutWindows)
+        try c.encode(hideMenuBarIcon, forKey: .hideMenuBarIcon)
+        try c.encode(displayRule, forKey: .displayRule)
+        try c.encode(windowDisplayFilter, forKey: .windowDisplayFilter)
+        try c.encode(exposeShortcut, forKey: .exposeShortcut)
+        try c.encode(exposeIncludeMinimized, forKey: .exposeIncludeMinimized)
+    }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         mainShortcut = try c.decodeIfPresent(Shortcut.self, forKey: .mainShortcut) ?? .cmdTab
-        appWindowsShortcut = try c.decodeIfPresent(Shortcut?.self, forKey: .appWindowsShortcut) ?? nil
+        appWindowsShortcut = c.contains(.appWindowsShortcut) ? try c.decodeIfPresent(Shortcut.self, forKey: .appWindowsShortcut) : .cmdGrave
         style = try c.decodeIfPresent(SwitcherStyle.self, forKey: .style) ?? .classic
         showAllWindows = try c.decodeIfPresent(Bool.self, forKey: .showAllWindows) ?? true
         includeMinimized = try c.decodeIfPresent(Bool.self, forKey: .includeMinimized) ?? true
@@ -90,6 +116,8 @@ struct SettingsData: Codable, Equatable {
         hideMenuBarIcon = try c.decodeIfPresent(Bool.self, forKey: .hideMenuBarIcon) ?? false
         displayRule = try c.decodeIfPresent(SwitcherDisplayRule.self, forKey: .displayRule) ?? .mouse
         windowDisplayFilter = try c.decodeIfPresent(WindowDisplayFilter.self, forKey: .windowDisplayFilter) ?? .allDisplays
+        exposeShortcut = c.contains(.exposeShortcut) ? try c.decodeIfPresent(Shortcut.self, forKey: .exposeShortcut) : .missionControl
+        exposeIncludeMinimized = try c.decodeIfPresent(Bool.self, forKey: .exposeIncludeMinimized) ?? false
     }
 }
 
@@ -166,6 +194,14 @@ final class AppSettings {
     var windowDisplayFilter: WindowDisplayFilter {
         get { data.windowDisplayFilter }
         set { data.windowDisplayFilter = newValue }
+    }
+    var exposeShortcut: Shortcut? {
+        get { data.exposeShortcut }
+        set { data.exposeShortcut = newValue }
+    }
+    var exposeIncludeMinimized: Bool {
+        get { data.exposeIncludeMinimized }
+        set { data.exposeIncludeMinimized = newValue }
     }
 
     // MARK: Launch at login (not persisted by us; the system owns this state)

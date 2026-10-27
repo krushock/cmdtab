@@ -5,8 +5,8 @@ import SwiftUI
 final class SettingsWindowController {
     private let window: NSWindow
 
-    init(settings: AppSettings, onPreview: @escaping () -> Void) {
-        let hosting = NSHostingController(rootView: SettingsView(settings: settings, onPreview: onPreview))
+    init(settings: AppSettings, onPreview: @escaping () -> Void, onPreviewExpose: @escaping () -> Void) {
+        let hosting = NSHostingController(rootView: SettingsView(settings: settings, onPreview: onPreview, onPreviewExpose: onPreviewExpose))
         let window = NSWindow(contentViewController: hosting)
         window.title = "CmdTab Settings"
         window.styleMask = [.titled, .closable, .miniaturizable]

@@ -1,6 +1,6 @@
 # CmdTab
 
-A small, native macOS window switcher. It replaces ⌘⇥ (or any shortcut you pick), can list every window instead of just apps, and comes with five animated styles.
+A small, native macOS window switcher. It replaces ⌘⇥ (or any shortcut you pick), can list every window instead of just apps, comes with five animated styles, and replaces Mission Control with an Exposé you can arrange windows in by dragging.
 
 Requires macOS 26 or newer. Written in Swift with AppKit + SwiftUI, no dependencies.
 
@@ -16,9 +16,9 @@ Rendered from synthetic windows with `CmdTab --screenshots <dir>`, so they show 
 | --- | --- |
 | ![Cover Flow](docs/screenshots/coverFlow.jpg) | ![Ring](docs/screenshots/ring.jpg) |
 
-| Filmstrip |
-| --- |
-| ![Filmstrip](docs/screenshots/filmstrip.jpg) |
+| Filmstrip | Exposé (dragging a window onto another) |
+| --- | --- |
+| ![Filmstrip](docs/screenshots/filmstrip.jpg) | ![Exposé](docs/screenshots/expose.jpg) |
 
 ## Features
 
@@ -29,6 +29,7 @@ Rendered from synthetic windows with `CmdTab --screenshots <dir>`, so they show 
 - **Live previews** of every window via ScreenCaptureKit, including minimized windows and windows on other Spaces.
 - **Mouse:** in Classic and Grid hovering selects; in the moving styles a click selects. The switcher stays open while the modifier is held; clicking the highlighted window or releasing the modifier switches. Click outside cancels.
 - **Keys while open:** ←/→/↑/↓ move, ↩ switch, ⎋ cancel, W close window, M minimize, Q quit app.
+- **Exposé on the Mission Control key (F3).** Every window of every display spread out, one overlay per display. Drag a window onto another to split the screen between them (the half it lands in lights up), drag to the left or right edge for that half, to the top edge to fill the screen, or onto another display to move it there. The overview reflows after each change so you can keep arranging. Click a window to switch to it, arrows and ↩ work too, ⎋ closes. Arranging uses Accessibility, so it works on any app's windows.
 - **Multiple displays:** choose where the switcher appears (display under the mouse by default, the active window's display, or the primary one) and whether it lists windows from all displays or only its own.
 - Menu bar item with quick style switching (can be hidden; open the app again to reach Settings), launch at login, a Preview button in Settings.
 - A permissions window gates startup: nothing runs until Accessibility and Screen Recording are granted.
@@ -71,3 +72,4 @@ Three private system calls are used: `_AXUIElementGetWindow` to match Accessibil
 - `Core/ThumbnailStore.swift` captures previews with `SCScreenshotManager`, a few at a time.
 - `Core/WindowActivator.swift` focuses the chosen window with the SkyLight calls above when available, then raises it via Accessibility.
 - `Switcher/Styles/*` are plain SwiftUI views hosted in a borderless non-activating `NSPanel`.
+- `Expose/*` is the Mission Control replacement: `ExposeLayout.swift` packs windows into rows at one scale, `ExposeController.swift` owns the per-display panels and turns drops into window frames, and `Core/WindowArranger.swift` applies them through Accessibility.
