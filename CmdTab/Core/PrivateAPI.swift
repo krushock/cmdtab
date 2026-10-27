@@ -21,6 +21,18 @@ enum PrivateAPI {
 
     static var canFocusWindows: Bool { setFrontProcess != nil && getProcessForPID != nil }
 
+    // MARK: Spaces (SkyLight). Read-only use: which Spaces exist per display and which one holds a window.
+
+    typealias MainConnectionID = @convention(c) () -> Int32
+    typealias CopyManagedDisplaySpaces = @convention(c) (Int32) -> Unmanaged<CFArray>?
+    typealias CopySpacesForWindows = @convention(c) (Int32, Int32, CFArray) -> Unmanaged<CFArray>?
+
+    static let mainConnectionID: MainConnectionID? = load("CGSMainConnectionID", from: skyLight)
+    static let copyManagedDisplaySpaces: CopyManagedDisplaySpaces? = load("CGSCopyManagedDisplaySpaces", from: skyLight)
+    static let copySpacesForWindows: CopySpacesForWindows? = load("CGSCopySpacesForWindows", from: skyLight)
+
+    static var hasSpaces: Bool { mainConnectionID != nil && copyManagedDisplaySpaces != nil && copySpacesForWindows != nil }
+
     private static let skyLight: UnsafeMutableRawPointer? =
         dlopen("/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight", RTLD_LAZY)
     private static let hiServices: UnsafeMutableRawPointer? =

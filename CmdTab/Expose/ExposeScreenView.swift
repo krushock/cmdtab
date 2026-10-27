@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The Exposé overlay for one display: tiles, drop-zone feedback, the drag ghost and a hint line.
+/// The Exposé overlay for one display: Spaces bar, tiles, drop-zone feedback, drag ghost and hint.
 struct ExposeScreenView: View {
     var model: ExposeModel
     let screenIndex: Int
@@ -24,6 +24,7 @@ struct ExposeScreenView: View {
                         tileView(tile, in: screen)
                     }
                     header(screen, width: geo.size.width)
+                    spacesBar(screen)
                     hint(size: geo.size)
                     if let drag = model.drag, screen.contains(global: drag.location) {
                         ghost(drag, in: screen)
@@ -43,24 +44,34 @@ struct ExposeScreenView: View {
     private func tileView(_ tile: ExposeTile, in screen: ExposeScreen) -> some View {
         let isDragged = model.drag?.windowID == tile.id
         let hovered = model.hovered == tile.id && model.drag == nil
-        let splitSide: SplitSide? = {
-            if case .window(tile.id, let side)? = model.drag?.target { return side }
-            return nil
+        let isTarget: Bool = {
+            if case .window(tile.id, _)? = model.drag?.target { return true }
+            return false
         }()
 
-        ThumbnailCard(item: tile.item, image: model.thumbnails[tile.id], size: tile.frame.size,
-                      selected: hovered || splitSide != nil, cornerRadius: 8, badgeSize: min(40, tile.frame.height * 0.2))
+        Group {
+            if tile.isGroup {
+                GroupCard(tile: tile, thumbnails: model.thumbnails, selected: hovered)
+            } else {
+                ThumbnailCard(item: tile.item, image: model.thumbnails[tile.id], size: tile.frame.size,
+                              selected: hovered || isTarget, cornerRadius: 8, badgeSize: min(40, tile.frame.height * 0.2))
+            }
+        }
         .frame(width: tile.frame.width, height: tile.frame.height)
         .overlay(alignment: .bottom) {
-            Text(tile.item.title)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.white)
-                .lineLimit(1)
-                .padding(.horizontal, 10).padding(.vertical, 4)
-                .background(Capsule().fill(.black.opacity(0.55)))
-                .frame(maxWidth: tile.frame.width)
-                .offset(y: 22)
-                .opacity(isDragged ? 0 : 1)
+            Label {
+                Text(tile.title)
+            } icon: {
+                if tile.isGroup { Image(systemName: "rectangle.split.2x1.fill") }
+            }
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(.white)
+            .lineLimit(1)
+            .padding(.horizontal, 10).padding(.vertical, 4)
+            .background(Capsule().fill(.black.opacity(0.55)))
+            .frame(maxWidth: tile.frame.width)
+            .offset(y: 22)
+            .opacity(isDragged ? 0 : 1)
         }
         .scaleEffect(hovered ? 1.03 : 1)
         .opacity(isDragged ? 0.25 : 1)
@@ -69,6 +80,7 @@ struct ExposeScreenView: View {
         .gesture(
             DragGesture(minimumDistance: 6, coordinateSpace: .global)
                 .onChanged { value in
+                    guard !tile.isGroup else { return }
                     let global = screen.globalPoint(fromPanel: value.location)
                     let grab = CGSize(width: value.startLocation.x - tile.frame.minX,
                                       height: value.startLocation.y - tile.frame.minY)
@@ -77,6 +89,32 @@ struct ExposeScreenView: View {
                 .onEnded { _ in actions.dragEnded() }
         )
         .onTapGesture { actions.activate(tile.id) }
+    }
+
+    /// Two windows CmdTab tiled together, drawn at their real relative positions inside one card.
+    private struct GroupCard: View {
+        let tile: ExposeTile
+        let thumbnails: [CGWindowID: CGImage]
+        let selected: Bool
+
+        var body: some View {
+            GeometryReader { geo in
+                ZStack(alignment: .topLeading) {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(0.06))
+                    ForEach(Array(zip(tile.members, tile.memberRects).enumerated()), id: \.element.0.id) { index, pair in
+                        let (window, rel) = pair
+                        let rect = CGRect(x: rel.minX * geo.size.width, y: rel.minY * geo.size.height,
+                                          width: rel.width * geo.size.width, height: rel.height * geo.size.height)
+                        ThumbnailCard(item: tile.items[index], image: thumbnails[window.id], size: rect.size,
+                                      selected: false, cornerRadius: 6, badgeSize: min(32, rect.height * 0.2))
+                            .position(x: rect.midX, y: rect.midY)
+                    }
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .shadow(color: .white.opacity(selected ? 0.55 : 0), radius: 26)
+            .shadow(color: .white.opacity(selected ? 0.35 : 0), radius: 8)
+        }
     }
 
     /// Above everything, including the ghost: the half of the target the dragged window will take lights up.
@@ -91,7 +129,6 @@ struct ExposeScreenView: View {
         }
     }
 
-    /// Drawn over the target tile: the half the dragged window will take lights up.
     private struct SplitPreview: View {
         let side: SplitSide
         var body: some View {
@@ -114,24 +151,113 @@ struct ExposeScreenView: View {
         }
     }
 
+    // MARK: Spaces bar
+
+    @ViewBuilder
+    private func spacesBar(_ screen: ExposeScreen) -> some View {
+        if !screen.spaces.isEmpty {
+            let frames = SpacesBarLayout.cardFrames(for: screen.spaces, screenSize: screen.size)
+            ForEach(screen.spaces) { space in
+                if let frame = frames[space.id] {
+                    let isDropTarget = model.drag?.target == .space(screen.id, space.id)
+                    let hovered = model.hovered == UInt64Hover.id(for: space.id)
+                    SpaceCard(space: space, screen: screen, thumbnails: model.thumbnails,
+                              highlighted: space.isCurrent, dropTarget: isDropTarget, hovered: hovered)
+                        .frame(width: frame.width, height: frame.height)
+                        .overlay(alignment: .top) {
+                            Text(space.name)
+                                .font(.system(size: 12, weight: space.isCurrent ? .semibold : .regular))
+                                .foregroundStyle(.white.opacity(space.isCurrent ? 1 : 0.75))
+                                .lineLimit(1)
+                                .frame(width: frame.width + 20)
+                                .offset(y: frame.height + 4)
+                        }
+                        .position(x: frame.midX, y: frame.midY)
+                        .onHover { actions.hover($0 ? UInt64Hover.id(for: space.id) : nil) }
+                        .onTapGesture { actions.switchSpace(screen.id, space.id) }
+                }
+            }
+        }
+    }
+
+    /// Space cards share the hover slot with tiles; their ids are kept apart from window numbers.
+    private enum UInt64Hover {
+        static func id(for space: UInt64) -> CGWindowID { CGWindowID(truncatingIfNeeded: 0x8000_0000 | (space & 0x7fff_ffff)) }
+    }
+
+    /// A miniature of one Space: its windows drawn where they are on the screen.
+    private struct SpaceCard: View {
+        let space: SpaceTile
+        let screen: ExposeScreen
+        let thumbnails: [CGWindowID: CGImage]
+        let highlighted: Bool
+        let dropTarget: Bool
+        let hovered: Bool
+
+        var body: some View {
+            GeometryReader { geo in
+                let scale = geo.size.width / max(1, screen.size.width)
+                ZStack(alignment: .topLeading) {
+                    LinearGradient(colors: [Color.white.opacity(0.22), Color.white.opacity(0.10)],
+                                   startPoint: .top, endPoint: .bottom)
+                    ForEach(space.windows.reversed()) { window in
+                        let r = screen.panelRect(fromWindowFrame: window.frame)
+                        let rect = CGRect(x: r.minX * scale, y: r.minY * scale, width: r.width * scale, height: r.height * scale)
+                        miniWindow(window, rect: rect)
+                    }
+                    if dropTarget {
+                        Rectangle().fill(Color.white.opacity(0.35))
+                        Image(systemName: "arrow.down.to.line")
+                            .font(.system(size: 20, weight: .bold)).foregroundStyle(.white)
+                            .frame(width: geo.size.width, height: geo.size.height)
+                    }
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .strokeBorder(Color.white.opacity(highlighted || dropTarget ? 0.95 : (hovered ? 0.5 : 0.2)),
+                              lineWidth: highlighted || dropTarget ? 2 : 1))
+            .shadow(color: .white.opacity(dropTarget ? 0.5 : 0), radius: 14)
+            .scaleEffect(hovered || dropTarget ? 1.06 : 1)
+            .animation(.snappy(duration: 0.18), value: hovered)
+            .animation(.snappy(duration: 0.18), value: dropTarget)
+        }
+
+        @ViewBuilder
+        private func miniWindow(_ window: WindowInfo, rect: CGRect) -> some View {
+            Group {
+                if let image = thumbnails[window.id] {
+                    Image(decorative: image, scale: 1).resizable().aspectRatio(contentMode: .fill)
+                } else {
+                    Color.white.opacity(0.55)
+                }
+            }
+            .frame(width: max(2, rect.width), height: max(2, rect.height))
+            .clipShape(RoundedRectangle(cornerRadius: 1.5))
+            .shadow(color: .black.opacity(0.4), radius: 2, y: 1)
+            .position(x: rect.midX, y: rect.midY)
+        }
+    }
+
     // MARK: Drop zones
 
     @ViewBuilder
     private func zoneFeedback(_ screen: ExposeScreen, size: CGSize) -> some View {
         if let target = model.drag?.target {
+            let top = screen.spaces.isEmpty ? 12 : SpacesBarLayout.totalHeight + 12
             switch target {
             case .zone(screen.id, let zone):
                 let rect: CGRect = {
                     switch zone {
-                    case .left: return CGRect(x: 12, y: 12, width: size.width / 2 - 18, height: size.height - 24)
-                    case .right: return CGRect(x: size.width / 2 + 6, y: 12, width: size.width / 2 - 18, height: size.height - 24)
-                    case .fill: return CGRect(x: 12, y: 12, width: size.width - 24, height: size.height - 24)
+                    case .left: return CGRect(x: 12, y: top, width: size.width / 2 - 18, height: size.height - top - 12)
+                    case .right: return CGRect(x: size.width / 2 + 6, y: top, width: size.width / 2 - 18, height: size.height - top - 12)
+                    case .fill: return CGRect(x: 12, y: top, width: size.width - 24, height: size.height - top - 12)
                     }
                 }()
                 let label = zone == .fill ? "Fill screen" : (zone == .left ? "Left half" : "Right half")
                 zoneRect(rect, label: label, symbol: zone == .fill ? "rectangle" : "rectangle.split.2x1")
             case .display(screen.id):
-                zoneRect(CGRect(x: 12, y: 12, width: size.width - 24, height: size.height - 24),
+                zoneRect(CGRect(x: 12, y: top, width: size.width - 24, height: size.height - top - 12),
                          label: "Move to \(screen.name)", symbol: "display")
             default:
                 EmptyView()
@@ -181,17 +307,17 @@ struct ExposeScreenView: View {
             Text(screen.name)
                 .font(.system(size: 14, weight: .semibold))
             if screen.tiles.isEmpty {
-                Text("No windows on this display").font(.system(size: 12))
+                Text("No windows on this desktop").font(.system(size: 12))
             }
         }
         .foregroundStyle(.white.opacity(0.75))
         .frame(width: width)
-        .padding(.top, 36)
+        .padding(.top, screen.spaces.isEmpty ? 36 : 22)
         .allowsHitTesting(false)
     }
 
     private func hint(size: CGSize) -> some View {
-        Text("Drag a window onto another to split the screen between them  ·  drag to an edge for a half or the whole screen  ·  click to switch  ·  ⎋ closes")
+        Text("Drag a window onto another to split the screen between them  ·  drag to an edge for a half or the whole screen  ·  drag onto a desktop to move it there  ·  click to switch  ·  ⎋ closes")
             .font(.system(size: 12))
             .foregroundStyle(.white.opacity(0.65))
             .padding(.horizontal, 14).padding(.vertical, 7)

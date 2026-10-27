@@ -66,24 +66,54 @@ enum ScreenshotRenderer {
         // Exposé with a drag in progress over another window.
         let exposeModel = ExposeModel()
         exposeModel.thumbnails = thumbs
-        let shown = Array(windows.prefix(6)).map { w in
-            WindowInfo(id: w.id, pid: w.pid, title: w.title,
-                       frame: CGRect(x: 0, y: 0, width: w.frame.width * 0.9, height: w.frame.height * 0.9),
+        // Windows placed on the (synthetic) desktop, so the Space previews have something to show.
+        let positions: [CGRect] = [
+            CGRect(x: 40, y: 60, width: 760, height: 520), CGRect(x: 560, y: 120, width: 620, height: 500),
+            CGRect(x: 120, y: 300, width: 700, height: 480), CGRect(x: 760, y: 360, width: 600, height: 440),
+            CGRect(x: 300, y: 90, width: 640, height: 460), CGRect(x: 820, y: 60, width: 560, height: 470),
+        ]
+        let shown = Array(windows.prefix(6)).enumerated().map { i, w in
+            WindowInfo(id: w.id, pid: w.pid, title: w.title, frame: positions[i],
                        isOnScreen: true, isMinimized: false, appName: w.appName, bundleID: w.bundleID)
         }
-        let area = CGRect(x: 70, y: 80, width: size.width - 140, height: size.height - 170)
-        let frames = ExposeLayout.layout(shown, in: area)
-        let tiles = zip(shown, items).map { w, item in ExposeTile(id: w.id, window: w, item: item, frame: frames[w.id] ?? .zero) }
+        // The first two are a remembered split pair.
+        let halfW = size.width / 2
+        let pair = [
+            WindowInfo(id: shown[0].id, pid: shown[0].pid, title: shown[0].title, frame: CGRect(x: 0, y: 25, width: halfW, height: size.height - 25),
+                       isOnScreen: true, isMinimized: false, appName: shown[0].appName, bundleID: shown[0].bundleID),
+            WindowInfo(id: shown[1].id, pid: shown[1].pid, title: shown[1].title, frame: CGRect(x: halfW, y: 25, width: halfW, height: size.height - 25),
+                       isOnScreen: true, isMinimized: false, appName: shown[1].appName, bundleID: shown[1].bundleID),
+        ]
+        var entries: [[WindowInfo]] = [pair]
+        entries += shown.dropFirst(2).map { [$0] }
+        let top = SpacesBarLayout.totalHeight + 36
+        let area = CGRect(x: 70, y: top, width: size.width - 140, height: size.height - top - 90)
+        let unions = entries.map { ms in ms.dropFirst().reduce(ms[0].frame) { $0.union($1.frame) } }
+        let frames = ExposeLayout.layout(zip(entries, unions).map { ExposeLayout.Entry(id: $0[0].id, size: $1.size) }, in: area)
+        let tiles = entries.map { members in
+            ExposeTile(id: members[0].id, members: members,
+                       items: members.map { w in items.first { $0.pid == w.pid }! },
+                       groupID: members.count > 1 ? UUID() : nil, frame: frames[members[0].id] ?? .zero)
+        }
         let screenFrame = CGRect(origin: .zero, size: size)
-        exposeModel.screens = [ExposeScreen(id: 0, name: "Built-in Display", frame: screenFrame, tiles: tiles)]
-        if let dragged = tiles.last, let target = tiles.first {
+        let spaces = [
+            SpaceTile(id: 1, index: 0, name: "Desktop 1", isCurrent: true, isFullscreen: false, windows: pair + Array(shown[2...])),
+            SpaceTile(id: 2, index: 1, name: "Desktop 2", isCurrent: false, isFullscreen: false, windows: [shown[4], shown[2]]),
+            SpaceTile(id: 3, index: 2, name: "Desktop 3", isCurrent: false, isFullscreen: false, windows: []),
+            SpaceTile(id: 4, index: 3, name: "Music", isCurrent: false, isFullscreen: true,
+                      windows: [WindowInfo(id: windows[6].id, pid: windows[6].pid, title: "Music", frame: screenFrame,
+                                           isOnScreen: false, isMinimized: false, appName: "Music", bundleID: windows[6].bundleID)]),
+        ]
+        exposeModel.screens = [ExposeScreen(id: 0, name: "Built-in Display", frame: screenFrame, topLeftOrigin: .zero,
+                                            tiles: tiles, spaces: spaces)]
+        if let dragged = tiles.last, let target = tiles.dropFirst().first {
             let grab = CGSize(width: dragged.frame.width * 0.5, height: dragged.frame.height * 0.4)
             let panelPoint = CGPoint(x: target.frame.midX + target.frame.width * 0.3, y: target.frame.midY)
             exposeModel.drag = ExposeDrag(windowID: dragged.id, sourceScreen: 0, grabOffset: grab, tileSize: dragged.frame.size,
                                           location: exposeModel.screens[0].globalPoint(fromPanel: panelPoint),
                                           target: .window(target.id, .right))
         }
-        let exposeActions = ExposeActions(hover: { _ in }, activate: { _ in }, dragChanged: { _, _, _, _ in }, dragEnded: {}, cancel: {})
+        let exposeActions = ExposeActions(hover: { _ in }, activate: { _ in }, switchSpace: { _, _ in }, dragChanged: { _, _, _, _ in }, dragEnded: {}, cancel: {})
         let exposeView = ZStack {
             Wallpaper()
             ExposeScreenView(model: exposeModel, screenIndex: 0, actions: exposeActions)

@@ -16,7 +16,7 @@ Rendered from synthetic windows with `CmdTab --screenshots <dir>`, so they show 
 | --- | --- |
 | ![Cover Flow](docs/screenshots/coverFlow.jpg) | ![Ring](docs/screenshots/ring.jpg) |
 
-| Filmstrip | Exposé (dragging a window onto another) |
+| Filmstrip | Exposé (Spaces bar, a remembered pair, dragging a window onto another) |
 | --- | --- |
 | ![Filmstrip](docs/screenshots/filmstrip.jpg) | ![Exposé](docs/screenshots/expose.jpg) |
 
@@ -30,6 +30,8 @@ Rendered from synthetic windows with `CmdTab --screenshots <dir>`, so they show 
 - **Mouse:** in Classic and Grid hovering selects; in the moving styles a click selects. The switcher stays open while the modifier is held; clicking the highlighted window or releasing the modifier switches. Click outside cancels.
 - **Keys while open:** ←/→/↑/↓ move, ↩ switch, ⎋ cancel, W close window, M minimize, Q quit app.
 - **Exposé on the Mission Control key (F3).** Every window of every display spread out, one overlay per display. Drag a window onto another to split the screen between them (the half it lands in lights up), drag to the left or right edge for that half, to the top edge to fill the screen, or onto another display to move it there. A drop closes the overview and brings the arranged windows forward, the dragged one focused. Click a window to switch to it, arrows and ↩ work too, ⎋ closes. Arranging uses Accessibility, so it works on any app's windows.
+- **Groups.** A pair you split is remembered until either window moves, resizes, closes or minimizes. In the Exposé it shows as one tile with both windows at their real positions, and clicking it brings the pair back together.
+- **Spaces.** A bar at the top of each display shows its desktops and full-screen apps as live miniatures, current one highlighted. Click one to switch; drag a window onto a desktop to move it there. Switching and moving go through the system's own ⌃← / ⌃→ shortcuts when there is no window to focus (keep those shortcuts enabled in System Settings → Keyboard → Keyboard Shortcuts → Mission Control). Moving a window grabs its title bar just right of the traffic lights and presses the shortcut while dragging, which is the only way one app can carry another app's window to a different Space.
 - **Multiple displays:** choose where the switcher appears (display under the mouse by default, the active window's display, or the primary one) and whether it lists windows from all displays or only its own.
 - Menu bar item with quick style switching (can be hidden; open the app again to reach Settings), launch at login, a Preview button in Settings.
 - A permissions window gates startup: nothing runs until Accessibility and Screen Recording are granted.
@@ -63,7 +65,7 @@ CmdTab runs entirely on your Mac. It makes no network connections, has no analyt
 
 ## Private APIs
 
-Three private system calls are used: `_AXUIElementGetWindow` to match Accessibility windows to window numbers, and the SkyLight calls `_SLPSSetFrontProcessWithOptions` and `SLPSPostEventRecordTo` to focus a specific window of another app, since the public activation API is cooperative since macOS 14 and refuses background apps. They are looked up at runtime in `Core/PrivateAPI.swift`; if a macOS release removes one, switching falls back to the public path (less precise about which window gets focus) instead of the app failing to launch. Together with the lack of sandboxing they rule out the Mac App Store; direct distribution with notarization is unaffected.
+Spaces are read with `CGSMainConnectionID`, `CGSCopyManagedDisplaySpaces` and `CGSCopySpacesForWindows`, read-only; macOS silently ignores the private calls that would switch Spaces or move another app's window, which is why the Exposé drives the system shortcuts instead. Three further private calls are used: `_AXUIElementGetWindow` to match Accessibility windows to window numbers, and the SkyLight calls `_SLPSSetFrontProcessWithOptions` and `SLPSPostEventRecordTo` to focus a specific window of another app, since the public activation API is cooperative since macOS 14 and refuses background apps. They are looked up at runtime in `Core/PrivateAPI.swift`; if a macOS release removes one, switching falls back to the public path (less precise about which window gets focus) instead of the app failing to launch. Together with the lack of sandboxing they rule out the Mac App Store; direct distribution with notarization is unaffected.
 
 ## How it works
 
@@ -72,4 +74,4 @@ Three private system calls are used: `_AXUIElementGetWindow` to match Accessibil
 - `Core/ThumbnailStore.swift` captures previews with `SCScreenshotManager`, a few at a time.
 - `Core/WindowActivator.swift` focuses the chosen window with the SkyLight calls above when available, then raises it via Accessibility.
 - `Switcher/Styles/*` are plain SwiftUI views hosted in a borderless non-activating `NSPanel`.
-- `Expose/*` is the Mission Control replacement: `ExposeLayout.swift` packs windows into rows at one scale, `ExposeController.swift` owns the per-display panels and turns drops into window frames, and `Core/WindowArranger.swift` applies them through Accessibility.
+- `Expose/*` is the Mission Control replacement: `ExposeLayout.swift` packs windows into rows at one scale, `ExposeController.swift` owns the per-display panels and turns drops into window frames, `Core/WindowArranger.swift` applies them through Accessibility, `Core/WindowGroups.swift` remembers split pairs and `Core/SpaceManager.swift` reads Spaces and drives the system shortcuts.

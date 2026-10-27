@@ -20,8 +20,10 @@ final class SwitcherController {
             cancel: { [weak self] in self?.cancel() }))
     }()
 
+    private let groups = WindowGroupStore()
     private lazy var expose: ExposeController = {
-        ExposeController(settings: settings, source: source, thumbnails: thumbnails) { [weak self] window in
+        ExposeController(settings: settings, source: source, thumbnails: thumbnails, groups: groups,
+                         sortWindows: { [mru] in mru.sorted($0) }) { [weak self] window in
             self?.activateFromExpose(window)
         }
     }()

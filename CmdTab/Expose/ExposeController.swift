@@ -2,7 +2,8 @@ import AppKit
 import Carbon.HIToolbox
 import SwiftUI
 
-/// Exposé: every window of every display spread out, with drag-and-drop arranging.
+/// Exposé: every window of every display spread out, a Spaces bar per display, and
+/// drag-and-drop arranging. Pairs tiled here are remembered as groups.
 @MainActor
 final class ExposeController {
     let settings: AppSettings
@@ -10,18 +11,24 @@ final class ExposeController {
 
     private let source: WindowSource
     private let thumbnails: ThumbnailStore
+    private let groups: WindowGroupStore
+    private let spaces = SpaceManager()
+    private let sortWindows: ([WindowInfo]) -> [WindowInfo]
     private let onActivate: (WindowInfo) -> Void
     private var panels: [Int: ExposePanel] = [:]
     private var loadTask: Task<Void, Never>?
     private(set) var isOpen = false
 
-    /// Layout margins inside each screen: room for the display name above and the hint below.
-    private static let insets = NSEdgeInsets(top: 80, left: 70, bottom: 90, right: 70)
+    private static let sideInset: CGFloat = 70
+    private static let bottomInset: CGFloat = 90
 
-    init(settings: AppSettings, source: WindowSource, thumbnails: ThumbnailStore, onActivate: @escaping (WindowInfo) -> Void) {
+    init(settings: AppSettings, source: WindowSource, thumbnails: ThumbnailStore, groups: WindowGroupStore,
+         sortWindows: @escaping ([WindowInfo]) -> [WindowInfo], onActivate: @escaping (WindowInfo) -> Void) {
         self.settings = settings
         self.source = source
         self.thumbnails = thumbnails
+        self.groups = groups
+        self.sortWindows = sortWindows
         self.onActivate = onActivate
     }
 
@@ -29,6 +36,7 @@ final class ExposeController {
         ExposeActions(
             hover: { [weak self] id in self?.hover(id) },
             activate: { [weak self] id in self?.activate(id) },
+            switchSpace: { [weak self] screen, space in self?.switchSpace(display: screen, id: space) },
             dragChanged: { [weak self] id, screen, global, grab in self?.dragChanged(id, screen: screen, global: global, grab: grab) },
             dragEnded: { [weak self] in self?.dragEnded() },
             cancel: { [weak self] in self?.close() })
@@ -54,7 +62,7 @@ final class ExposeController {
             await self.source.refresh()
             guard self.isOpen, !Task.isCancelled else { return }
             self.rebuildScreens(animated: true)
-            await self.capture(self.model.allTiles.map(\.window))
+            await self.captureVisible()
         }
     }
 
@@ -79,30 +87,77 @@ final class ExposeController {
         }
     }
 
-    // MARK: - Screens and tiles
+    // MARK: - Screens, tiles, spaces
 
     private func rebuildScreens(animated: Bool) {
         let screens = NSScreen.screens
-        let windows = source.windows.filter { $0.isOnScreen || (settings.exposeIncludeMinimized && $0.isMinimized) }
+        let primaryHeight = screens.first?.frame.height ?? 0
+        groups.prune(with: source.windows)
+        if spaces.isAvailable { spaces.refresh(windows: source.windows) }
+        let visible = source.windows.filter { $0.isOnScreen || (settings.exposeIncludeMinimized && $0.isMinimized) }
+
         var result: [ExposeScreen] = []
         for (index, screen) in screens.enumerated() {
-            let mine = windows.filter { Self.screenIndex(forWindowFrame: $0.frame) == index }
-            let size = screen.frame.size
-            let area = CGRect(x: Self.insets.left, y: Self.insets.top,
-                              width: size.width - Self.insets.left - Self.insets.right,
-                              height: size.height - Self.insets.top - Self.insets.bottom)
-            let frames = ExposeLayout.layout(mine, in: area)
-            let tiles = mine.map { w in
-                ExposeTile(id: w.id, window: w,
-                           item: SwitcherItem.window(w, app: NSRunningApplication(processIdentifier: w.pid)),
-                           frame: frames[w.id] ?? .zero)
+            let mine = visible.filter { Self.screenIndex(forWindowFrame: $0.frame) == index }
+
+            // Group members become one entry; everything else is a single-window entry.
+            var entries: [[WindowInfo]] = []
+            var consumed = Set<CGWindowID>()
+            for w in mine where !consumed.contains(w.id) {
+                if let g = groups.group(containing: w.id) {
+                    let members = g.ids.compactMap { id in mine.first { $0.id == id } }
+                    if members.count == g.ids.count {
+                        entries.append(members)
+                        consumed.formUnion(g.ids)
+                        continue
+                    }
+                }
+                entries.append([w])
+                consumed.insert(w.id)
             }
-            result.append(ExposeScreen(id: index, name: screen.localizedName, frame: screen.frame, tiles: tiles))
+
+            let spaceTiles = spaceTiles(forDisplay: index)
+            let size = screen.frame.size
+            let top: CGFloat = spaceTiles.isEmpty ? 80 : SpacesBarLayout.totalHeight + 36
+            let area = CGRect(x: Self.sideInset, y: top, width: size.width - 2 * Self.sideInset,
+                              height: size.height - top - Self.bottomInset)
+            let unions = entries.map { ms in ms.dropFirst().reduce(ms[0].frame) { $0.union($1.frame) } }
+            let layoutEntries = zip(entries, unions).map { ExposeLayout.Entry(id: $0[0].id, size: $1.size) }
+            let frames = ExposeLayout.layout(layoutEntries, in: area)
+            let tiles = entries.map { members in
+                ExposeTile(id: members[0].id, members: members,
+                           items: members.map { SwitcherItem.window($0, app: NSRunningApplication(processIdentifier: $0.pid)) },
+                           groupID: members.count > 1 ? groups.group(containing: members[0].id)?.id : nil,
+                           frame: frames[members[0].id] ?? .zero)
+            }
+            let topLeftOrigin = CGPoint(x: screen.frame.minX, y: primaryHeight - screen.frame.maxY)
+            result.append(ExposeScreen(id: index, name: screen.localizedName, frame: screen.frame,
+                                       topLeftOrigin: topLeftOrigin, tiles: tiles, spaces: spaceTiles))
         }
         if animated {
             withAnimation(.spring(duration: 0.4, bounce: 0.15)) { model.screens = result }
         } else {
             model.screens = result
+        }
+    }
+
+    private func spaceTiles(forDisplay index: Int) -> [SpaceTile] {
+        let list = spaces.spaces(forDisplay: index)
+        guard list.count > 1 || list.contains(where: \.isFullscreen) else { return [] }
+        var desktopNumber = 0
+        return list.map { space in
+            let windows = sortWindows(source.windows.filter {
+                spaces.space(for: $0.id) == space.id && !$0.isMinimized && Self.screenIndex(forWindowFrame: $0.frame) == index
+            })
+            let name: String
+            if space.isFullscreen {
+                name = windows.first?.appName ?? "Full Screen"
+            } else {
+                desktopNumber += 1
+                name = "Desktop \(desktopNumber)"
+            }
+            return SpaceTile(id: space.id, index: space.index, name: name, isCurrent: space.isCurrent,
+                             isFullscreen: space.isFullscreen, windows: windows)
         }
     }
 
@@ -113,8 +168,14 @@ final class ExposeController {
         return NSScreen.screens.firstIndex { $0.frame.contains(center) } ?? 0
     }
 
-    private func capture(_ windows: [WindowInfo]) async {
-        await thumbnails.captureAll(windows, source: source) { [weak self] id, image in
+    /// Previews for the tiles first, then for the windows shown inside the Space cards.
+    private func captureVisible() async {
+        var seen = Set<CGWindowID>()
+        var list: [WindowInfo] = []
+        for w in model.allTiles.flatMap(\.members) + model.screens.flatMap { $0.spaces.flatMap(\.windows) } {
+            if seen.insert(w.id).inserted { list.append(w) }
+        }
+        await thumbnails.captureAll(list, source: source) { [weak self] id, image in
             self?.model.thumbnails[id] = image
         }
     }
@@ -153,15 +214,41 @@ final class ExposeController {
         withAnimation(.snappy(duration: 0.18)) { model.hovered = id }
     }
 
+    /// Switches to a window, or brings a whole group forward with its last member focused.
     private func activate(_ id: CGWindowID) {
-        guard let window = model.tile(id)?.window else { return }
+        guard let tile = model.tile(id) else { return }
         close()
-        onActivate(window)
+        bringForward(tile.members)
     }
+
+    private func bringForward(_ windows: [WindowInfo]) {
+        Task { [weak self] in
+            for (i, w) in windows.enumerated() {
+                if i > 0 { try? await Task.sleep(for: .milliseconds(120)) }
+                self?.onActivate(w)
+            }
+        }
+    }
+
+    private func switchSpace(display: Int, id: UInt64) {
+        guard let target = spaces.spaces(forDisplay: display).first(where: { $0.id == id }) else { return }
+        close()
+        guard !target.isCurrent else { return }
+        // Focusing a window that lives there makes macOS switch, with its own animation.
+        if let w = sortWindows(source.windows.filter { spaces.space(for: $0.id) == id }).first {
+            onActivate(w)
+            return
+        }
+        // An empty desktop has nothing to focus: use the system's ⌃arrow shortcut.
+        guard let current = spaces.currentSpace(forDisplay: display) else { return }
+        Task { await SpaceNavigator.pressArrows(target.index - current.index) }
+    }
+
+    // MARK: - Drag and drop
 
     private func dragChanged(_ id: CGWindowID, screen: Int, global: CGPoint, grab: CGSize) {
         if model.drag == nil {
-            guard let tile = model.tile(id) else { return }
+            guard let tile = model.tile(id), !tile.isGroup else { return }
             model.hovered = nil
             model.drag = ExposeDrag(windowID: id, sourceScreen: screen, grabOffset: grab,
                                     tileSize: tile.frame.size, location: global, target: nil)
@@ -176,11 +263,19 @@ final class ExposeController {
     private func dropTarget(at global: CGPoint, dragging id: CGWindowID, from sourceScreen: Int) -> DropTarget? {
         guard let screen = model.screen(containing: global) else { return nil }
         let p = screen.panelPoint(fromGlobal: global)
+        for (spaceID, frame) in SpacesBarLayout.cardFrames(for: screen.spaces, screenSize: screen.size)
+        where frame.insetBy(dx: -8, dy: -8).contains(p) {
+            if let space = screen.spaces.first(where: { $0.id == spaceID }), !space.isFullscreen, !space.isCurrent {
+                return .space(screen.id, spaceID)
+            }
+            return nil
+        }
         let edge: CGFloat = 56
-        if p.y < edge { return .zone(screen.id, .fill) }
+        if p.y < edge && screen.spaces.isEmpty { return .zone(screen.id, .fill) }
         if p.x < edge { return .zone(screen.id, .left) }
         if p.x > screen.size.width - edge { return .zone(screen.id, .right) }
-        for tile in screen.tiles where tile.id != id {
+        if p.y > screen.size.height - edge { return .zone(screen.id, .fill) }
+        for tile in screen.tiles where tile.id != id && !tile.isGroup {
             if tile.frame.insetBy(dx: -10, dy: -10).contains(p) {
                 return .window(tile.id, p.x < tile.frame.midX ? .left : .right)
             }
@@ -197,6 +292,7 @@ final class ExposeController {
         let axCache = source.axCache
         /// Windows to bring forward afterwards, last one gets focus.
         var focus: [WindowInfo] = [window]
+        var newGroup: [WindowInfo]? = nil
 
         switch target {
         case .window(let otherID, let side):
@@ -207,6 +303,7 @@ final class ExposeController {
             WindowArranger.setFrame(window, to: side == .left ? halves.left : halves.right, axCache: axCache)
             WindowArranger.setFrame(other, to: side == .left ? halves.right : halves.left, axCache: axCache)
             focus.insert(other, at: 0)
+            newGroup = focus
 
         case .zone(let screenID, let zone):
             guard let nsScreen = nsScreen(for: screenID) else { return }
@@ -224,15 +321,38 @@ final class ExposeController {
             guard let nsScreen = nsScreen(for: screenID) else { return }
             let area = WindowArranger.visibleArea(of: nsScreen)
             WindowArranger.setFrame(window, to: WindowArranger.centered(size: window.frame.size, in: area), axCache: axCache)
+
+        case .space(let screenID, let spaceID):
+            guard let current = spaces.currentSpace(forDisplay: screenID),
+                  let target = spaces.spaces(forDisplay: screenID).first(where: { $0.id == spaceID }),
+                  spaces.space(for: window.id) != spaceID else { return }
+            close()
+            let steps = target.index - current.index
+            let activate = onActivate
+            Task { [source] in
+                // The window has to be frontmost and settled before its title bar can be grabbed.
+                activate(window)
+                try? await Task.sleep(for: .milliseconds(400))
+                await source.refresh()
+                guard let fresh = source.windows.first(where: { $0.id == window.id }) else { return }
+                await SpaceNavigator.moveWindow(fresh, steps: steps)
+            }
+            return
         }
 
         // A drop ends the arranging: leave the overview and bring the arranged windows forward,
         // the dragged one last so it ends up focused.
         close()
-        Task { [weak self] in
-            for (i, w) in focus.enumerated() {
-                if i > 0 { try? await Task.sleep(for: .milliseconds(120)) }
-                self?.onActivate(w)
+        bringForward(focus)
+
+        if let newGroup {
+            // Remember the pair with the frames the apps actually settled on.
+            Task { [weak self, source, groups] in
+                try? await Task.sleep(for: .milliseconds(450))
+                await source.refresh()
+                let settled = newGroup.compactMap { m in source.windows.first { $0.id == m.id } }
+                guard settled.count == newGroup.count, self != nil else { return }
+                groups.add(settled)
             }
         }
     }
