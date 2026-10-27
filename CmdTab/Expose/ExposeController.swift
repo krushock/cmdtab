@@ -195,7 +195,8 @@ final class ExposeController {
         guard let target = drag.target,
               let window = source.windows.first(where: { $0.id == drag.windowID }) else { return }
         let axCache = source.axCache
-        var touched: [WindowInfo] = [window]
+        /// Windows to bring forward afterwards, last one gets focus.
+        var focus: [WindowInfo] = [window]
 
         switch target {
         case .window(let otherID, let side):
@@ -205,7 +206,7 @@ final class ExposeController {
             let halves = WindowArranger.halves(of: WindowArranger.visibleArea(of: nsScreen))
             WindowArranger.setFrame(window, to: side == .left ? halves.left : halves.right, axCache: axCache)
             WindowArranger.setFrame(other, to: side == .left ? halves.right : halves.left, axCache: axCache)
-            touched.append(other)
+            focus.insert(other, at: 0)
 
         case .zone(let screenID, let zone):
             guard let nsScreen = nsScreen(for: screenID) else { return }
@@ -225,16 +226,14 @@ final class ExposeController {
             WindowArranger.setFrame(window, to: WindowArranger.centered(size: window.frame.size, in: area), axCache: axCache)
         }
 
-        // Let the windows settle, then reflow the overview with the new geometry and fresh previews.
-        loadTask?.cancel()
-        loadTask = Task { [weak self] in
-            guard let self else { return }
-            try? await Task.sleep(for: .milliseconds(180))
-            await self.source.refresh()
-            guard self.isOpen, !Task.isCancelled else { return }
-            self.rebuildScreens(animated: true)
-            let ids = Set(touched.map(\.id))
-            await self.capture(self.source.windows.filter { ids.contains($0.id) })
+        // A drop ends the arranging: leave the overview and bring the arranged windows forward,
+        // the dragged one last so it ends up focused.
+        close()
+        Task { [weak self] in
+            for (i, w) in focus.enumerated() {
+                if i > 0 { try? await Task.sleep(for: .milliseconds(120)) }
+                self?.onActivate(w)
+            }
         }
     }
 
