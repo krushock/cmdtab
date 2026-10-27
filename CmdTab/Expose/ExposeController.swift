@@ -234,14 +234,15 @@ final class ExposeController {
         guard let target = spaces.spaces(forDisplay: display).first(where: { $0.id == id }) else { return }
         close()
         guard !target.isCurrent else { return }
-        // Focusing a window that lives there makes macOS switch, with its own animation.
+        let switched = spaces.switchTo(space: id, display: display)
+        // Give the most recent window there focus once the switch has happened.
         if let w = sortWindows(source.windows.filter { spaces.space(for: $0.id) == id }).first {
-            onActivate(w)
-            return
+            let activate = onActivate
+            Task {
+                if switched { try? await Task.sleep(for: .milliseconds(350)) }
+                activate(w)
+            }
         }
-        // An empty desktop has nothing to focus: use the system's ⌃arrow shortcut.
-        guard let current = spaces.currentSpace(forDisplay: display) else { return }
-        Task { await SpaceNavigator.pressArrows(target.index - current.index) }
     }
 
     // MARK: - Drag and drop
@@ -323,19 +324,18 @@ final class ExposeController {
             WindowArranger.setFrame(window, to: WindowArranger.centered(size: window.frame.size, in: area), axCache: axCache)
 
         case .space(let screenID, let spaceID):
-            guard let current = spaces.currentSpace(forDisplay: screenID),
-                  let target = spaces.spaces(forDisplay: screenID).first(where: { $0.id == spaceID }),
+            guard let screen = model.screens.first(where: { $0.id == screenID }),
+                  let space = screen.spaces.first(where: { $0.id == spaceID }),
+                  let nsScreen = nsScreen(for: screenID),
                   spaces.space(for: window.id) != spaceID else { return }
             close()
-            let steps = target.index - current.index
-            let activate = onActivate
-            Task { [source] in
-                // The window has to be frontmost and settled before its title bar can be grabbed.
-                activate(window)
-                try? await Task.sleep(for: .milliseconds(400))
-                await source.refresh()
-                guard let fresh = source.windows.first(where: { $0.id == window.id }) else { return }
-                await SpaceNavigator.moveWindow(fresh, steps: steps)
+            let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
+            let frame = CGRect(x: nsScreen.frame.minX, y: primaryHeight - nsScreen.frame.maxY,
+                               width: nsScreen.frame.width, height: nsScreen.frame.height)
+            Task {
+                try? await Task.sleep(for: .milliseconds(250))   // overlay fade-out first
+                let ok = await MissionControl.move(window, toSpaceTitled: space.name, screenFrame: frame)
+                if !ok { NSLog("CmdTab: could not move window \(window.id) to \(space.name) via Mission Control") }
             }
             return
         }

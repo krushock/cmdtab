@@ -31,6 +31,11 @@ enum PrivateAPI {
     static let copyManagedDisplaySpaces: CopyManagedDisplaySpaces? = load("CGSCopyManagedDisplaySpaces", from: skyLight)
     static let copySpacesForWindows: CopySpacesForWindows? = load("CGSCopySpacesForWindows", from: skyLight)
 
+    /// Switches a display to one of its Spaces. Verified to work on macOS 26/27; the keyboard
+    /// shortcuts cannot be used instead because the system ignores synthetic hotkey presses.
+    typealias ManagedDisplaySetCurrentSpace = @convention(c) (Int32, CFString, UInt64) -> Void
+    static let managedDisplaySetCurrentSpace: ManagedDisplaySetCurrentSpace? = load("CGSManagedDisplaySetCurrentSpace", from: skyLight)
+
     static var hasSpaces: Bool { mainConnectionID != nil && copyManagedDisplaySpaces != nil && copySpacesForWindows != nil }
 
     private static let skyLight: UnsafeMutableRawPointer? =
